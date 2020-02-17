@@ -1,4 +1,4 @@
-defmodule BrookStoragePostgres.Storage do
+defmodule BrookPostgres.Storage do
   @moduledoc """
   Implements the `Brook.Storage` behaviour for the Postgres
   database, saving the application view state as serialized

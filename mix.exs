@@ -1,9 +1,9 @@
-defmodule BrookStoragePostgres.MixProject do
+defmodule BrookPostgres.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :brook_storage_postgres,
+      app: :brook_postgres,
       version: "0.1.0",
       elixir: "~> 1.8",
       description: description(),
@@ -41,7 +41,7 @@ defmodule BrookStoragePostgres.MixProject do
     [
       maintainers: ["Jeff Grunewald"],
       licenses: ["Apache 2.0"],
-      links: %{"GitHub" => "https://github.com/jeffgrunewald/brook_storage_postgres"}
+      links: %{"GitHub" => "https://github.com/jeffgrunewald/brook_postgres"}
     ]
   end
 

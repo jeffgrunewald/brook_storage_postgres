@@ -1,9 +1,9 @@
-defmodule BrookStoragePostgres.StorageTest do
+defmodule BrookPostgres.StorageTest do
   use ExUnit.Case
   use Divo
   use Placebo
 
-  alias BrookStoragePostgres.Storage, as: Postgres
+  alias BrookPostgres.Storage, as: Postgres
 
   @instance :postgres_test
   @postgrex_args [

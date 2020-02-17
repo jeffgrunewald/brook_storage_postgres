@@ -1,6 +1,6 @@
 use Mix.Config
 
-config :brook_storage_postgres,
+config :brook_postgres,
   divo: [
     {DivoPostgres, [database: "view_test", user: "brook", password: "brook"]}
   ],
