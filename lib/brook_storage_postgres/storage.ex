@@ -53,6 +53,13 @@ defmodule BrookStoragePostgres.Storage do
   end
 
   @impl Brook.Storage
+  def get_events(_instance, _collection, _key, _type) do
+    {:ok, []}
+
+    # must get all events from a given collection and key of the specified type
+  end
+
+  @impl Brook.Storage
   def start_link(_args) do
     :ok
 

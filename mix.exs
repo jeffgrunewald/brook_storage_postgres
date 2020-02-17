@@ -25,8 +25,9 @@ defmodule BrookStoragePostgres.MixProject do
     [
       {:brook, "~> 0.5"},
       {:brook_serializer, "~> 2.2"},
-      {:divo_postgres, "~> 0.1", only: :integration},
-      {:postgrex, "~> 0.15"}
+      {:postgrex, "~> 0.15"},
+      {:divo_postgres, "~> 0.1", only: [:integration]},
+      {:placebo, "~> 1.2", only: [:test, :integration]}
     ]
   end
 
