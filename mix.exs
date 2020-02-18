@@ -8,8 +8,6 @@ defmodule BrookPostgres.MixProject do
       elixir: "~> 1.8",
       description: description(),
       package: package(),
-      elixirc_paths: elixirc_paths(Mix.env()),
-      test_paths: test_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
@@ -26,16 +24,11 @@ defmodule BrookPostgres.MixProject do
       {:brook, "~> 0.5"},
       {:brook_serializer, "~> 2.2"},
       {:postgrex, "~> 0.15"},
-      {:divo_postgres, "~> 0.1", only: [:integration]},
-      {:placebo, "~> 1.2", only: [:test, :integration]}
+      {:dialyxir, "~> 1.0.0-rc.7", only: [:dev], runtime: false},
+      {:divo_postgres, "~> 0.1", only: [:test]},
+      {:placebo, "~> 1.2", only: [:test]}
     ]
   end
-
-  defp elixirc_paths(env) when env in [:test, :integration], do: ["lib", "test/support"]
-  defp elixirc_paths(_), do: ["lib"]
-
-  defp test_paths(:integration), do: ["test/integration"]
-  defp test_paths(_), do: ["test/unit"]
 
   defp package do
     [
