@@ -9,9 +9,15 @@ defmodule BrookPostgres.Query do
   """
   require Logger
 
-  @spec postgres_get_all(pid(), String.t(), String.t(), String.t(), String.t()) ::
+  @spec postgres_get_events(pid(), String.t(), String.t(), String.t(), String.t() | nil) ::
           {:ok, [binary()]}
-  def postgres_get_all(conn, schema_table, collection, key, type) do
+  def postgres_get_events(conn, schema_table, collection, key, type \\ nil) do
+    type_filter =
+      case type do
+        nil -> nil
+        _ -> "AND type = '#{type}'"
+      end
+
     {:ok, %Postgrex.Result{rows: rows}} =
       Postgrex.query(
         conn,
@@ -19,7 +25,7 @@ defmodule BrookPostgres.Query do
         FROM #{schema_table}
         WHERE collection = '#{collection}'
         AND key = '#{key}'
-        AND type = '#{type}'
+        #{type_filter}
         ORDER BY create_ts ASC;",
         []
       )

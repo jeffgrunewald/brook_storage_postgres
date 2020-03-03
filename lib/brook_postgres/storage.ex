@@ -48,10 +48,16 @@ defmodule BrookPostgres.Storage do
   end
 
   @impl Brook.Storage
-  def get_events(_instance, _collection, _key) do
-    {:ok, []}
+  def get_events(instance, collection, key) do
+    %{postgrex: postgrex, schema: schema, table: table, event_limits: event_limits} =
+      state(instance)
 
-    # must get all events from a given collection and key
+    with {:ok, compressed_events} <-
+           Query.postgres_get_events(postgrex, "#{schema}.#{table}", collection, key),
+         serialized_events <- Enum.map(compressed_events, &:zlib.gunzip/1),
+         {:ok, events} <- safe_map(serialized_events, &Brook.Deserializer.deserialize/1) do
+      {:ok, events}
+    end
   end
 
   @impl Brook.Storage
@@ -60,7 +66,7 @@ defmodule BrookPostgres.Storage do
       state(instance)
 
     with {:ok, compressed_events} <-
-           Query.postgres_get_all(postgrex, "#{schema}.#{table}", collection, key, type),
+           Query.postgres_get_events(postgrex, "#{schema}.#{table}", collection, key, type),
          serialized_events <- Enum.map(compressed_events, &:zlib.gunzip/1),
          {:ok, events} <- safe_map(serialized_events, &Brook.Deserializer.deserialize/1) do
       {:ok, events}
@@ -95,7 +101,7 @@ defmodule BrookPostgres.Storage do
       event_limits: state.event_limits
     })
 
-    {:ok, state, {:continue, :init_tables}}
+    {:ok, %{state | postgrex: postgrex}, {:continue, :init_tables}}
   end
 
   @impl GenServer
