@@ -34,26 +34,42 @@ defmodule BrookPostgres.Storage do
   end
 
   @impl Brook.Storage
-  def get(_instance, _collection, key) do
-    key
+  def get(instance, collection, key) do
+    %{postgrex: postgrex, schema: schema, table: table} = state(instance)
 
-    # must get a given value from a given collection by its key
+    case Query.postgres_get(postgrex, "#{schema}.#{table}", collection, key) do
+      {:ok, []} ->
+        {:ok, nil}
+
+      {:ok, [encoded_value]} ->
+        value
+        |> Jason.decode!()
+        |> Map.get("value")
+        |> Brook.Deserializer.deserialize()
+
+      error_result ->
+        error_result
+    end
   end
 
   @impl Brook.Storage
-  def get_all(_instance, _collection) do
-    {:ok, %{}}
+  def get_all(instance, collection) do
+    %{postgrex: postgrex, schema: schema, table: table} = state(instance)
 
-    # must get all values from a given collection
+    with {:ok, encoded_values} <- Query.postgres_get(postgrex, "#{schema}.#{table}", collection),
+         {:ok, decoded_values} <- safe_map(encoded_values, &Jason.decode/1) do
+      decoded_values
+      |> Enum.map(&deserialize_data/1)
+      |> Enum.into(%{})
+      |> ok()
   end
 
   @impl Brook.Storage
   def get_events(instance, collection, key) do
-    %{postgrex: postgrex, schema: schema, table: table, event_limits: event_limits} =
-      state(instance)
+    %{postgrex: postgrex, schema: schema, table: table} = state(instance)
 
     with {:ok, compressed_events} <-
-           Query.postgres_get_events(postgrex, "#{schema}.#{table}", collection, key),
+           Query.postgres_get_events(postgrex, "#{schema}.#{table}_events", collection, key),
          serialized_events <- Enum.map(compressed_events, &:zlib.gunzip/1),
          {:ok, events} <- safe_map(serialized_events, &Brook.Deserializer.deserialize/1) do
       {:ok, events}
@@ -62,11 +78,10 @@ defmodule BrookPostgres.Storage do
 
   @impl Brook.Storage
   def get_events(instance, collection, key, type) do
-    %{postgrex: postgrex, schema: schema, table: table, event_limits: event_limits} =
-      state(instance)
+    %{postgrex: postgrex, schema: schema, table: table} = state(instance)
 
     with {:ok, compressed_events} <-
-           Query.postgres_get_events(postgrex, "#{schema}.#{table}", collection, key, type),
+           Query.postgres_get_events(postgrex, "#{schema}.#{table}_events", collection, key, type),
          serialized_events <- Enum.map(compressed_events, &:zlib.gunzip/1),
          {:ok, events} <- safe_map(serialized_events, &Brook.Deserializer.deserialize/1) do
       {:ok, events}
@@ -131,6 +146,14 @@ defmodule BrookPostgres.Storage do
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
+  end
+
+  defp ok({:ok, value} = result), do: result
+  defp ok(value), do: {:ok, value}
+
+  defp deserialize_data(%{"key" => key, "value" => value}) do
+    {:ok, deserialized_value} = Brook.Deserializer.deserialize(value)
+    {key, deserialized_value}
   end
 
   defp not_initialized_exception() do

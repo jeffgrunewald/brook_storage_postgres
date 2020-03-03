@@ -9,6 +9,28 @@ defmodule BrookPostgres.Query do
   """
   require Logger
 
+  @spec postgres_get(pid(), String.t(), String.t(), String.t() | nil) :: {:ok, term()}
+  def postgres_get(conn, schema_table, collection, key \\ nil) do
+    key_filter =
+      case key do
+        nil -> nil
+        _ -> "AND key = '#{key}'"
+      end
+
+    {:ok, %Postgrex.Result{rows: rows}} =
+      Postgrex.query(
+        conn,
+        "SELECT value
+        FROM #{schema_table}
+        WHERE collection = '#{collection}'
+        #{key_filter}
+        ;",
+        []
+      )
+
+    {:ok, List.flatten(rows)}
+  end
+
   @spec postgres_get_events(pid(), String.t(), String.t(), String.t(), String.t() | nil) ::
           {:ok, [binary()]}
   def postgres_get_events(conn, schema_table, collection, key, type \\ nil) do
