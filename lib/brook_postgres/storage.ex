@@ -101,7 +101,7 @@ defmodule BrookPostgres.Storage do
       event_limits: state.event_limits
     })
 
-    {:ok, %{state | postgrex: postgrex}, {:continue, :init_tables}}
+    {:ok, Map.put(state, :postgrex, postgrex), {:continue, :init_tables}}
   end
 
   @impl GenServer

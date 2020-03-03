@@ -35,7 +35,7 @@ defmodule BrookPostgres.Query do
 
   @spec schema_create(pid(), String.t()) :: :ok | {:error, term}
   def schema_create(conn, schema) do
-    case Postgrex.query(conn, "CREATE SCHEMA #{schema} IF NOT EXISTS;", []) do
+    case Postgrex.query(conn, "CREATE SCHEMA IF NOT EXISTS #{schema};", []) do
       {:ok, %Postgrex.Result{}} ->
         Logger.info(fn -> "Schema #{schema} successfully created" end)
         :ok
@@ -100,24 +100,24 @@ defmodule BrookPostgres.Query do
          {:ok, %Postgrex.Result{}} <-
            Postgrex.query(
              conn,
-             "CREATE INDEX CONCURRENTLY type_idx ON #{schema}.#{table} (type);",
+             "CREATE INDEX CONCURRENTLY type_idx ON #{schema}.#{table}_events (type);",
              []
            ),
          {:ok, %Postgrex.Result{}} <-
            Postgrex.query(
              conn,
-             "CREATE INDEX CONCURRENTLY timestamp_idx ON #{schema}.#{table} (create_ts);",
+             "CREATE INDEX CONCURRENTLY timestamp_idx ON #{schema}.#{table}_events (create_ts);",
              []
            ) do
       Logger.info(fn ->
-        "Table #{table} created in schema #{schema} with indices : type, create_ts"
+        "Table #{table}_events created in schema #{schema} with indices : type, create_ts"
       end)
 
       :ok
     else
       {:ok, %Postgrex.Result{messages: [%{code: "42P07"}]}} ->
         Logger.info(fn ->
-          "Table #{table} in schema #{schema} already exists; skipping index creation"
+          "Table #{table}_events in schema #{schema} already exists; skipping index creation"
         end)
 
       error ->

@@ -121,10 +121,10 @@ defmodule BrookPostgres.StorageTest do
           create_ts: 1
         )
 
-      :ok = Postgres.persist(@instance, event1, "people", "key1", event1.data) |> IO.inspect(label: "PERSIST RESULT")
+      :ok = Postgres.persist(@instance, event1, "people", "key1", event1.data)
       :ok = Postgres.persist(@instance, event2, "people", "key1", event2.data)
 
-      # assert {:ok, [event1, event2]} == Postgres.get_events(@instance, "people", "key1")
+      assert {:ok, [event1, event2]} == Postgres.get_events(@instance, "people", "key1")
     end
 
     test "returns only events matching type" do
@@ -217,13 +217,8 @@ defmodule BrookPostgres.StorageTest do
     {:ok, postgres} = start_supervised({Postgrex, @postgrex_args})
 
     Postgrex.transaction(postgres, fn postgres ->
-      Postgrex.query!(postgres, "DROP TABLE IF EXISTS #{@table}_events", [])
-      Postgrex.query!(postgres, "DROP TABLE IF EXISTS #{@table}", [])
-    end)
-
-    on_exit(fn ->
-      IO.puts("About to query the system")
-      Postgrex.query!(postgres, "SELECT * FROM #{@table}", []) |> IO.inspect(label: "QUERY")
+      Postgrex.query!(postgres, "DROP TABLE IF EXISTS #{@table}_events;", [])
+      Postgrex.query!(postgres, "DROP TABLE IF EXISTS #{@table};", [])
     end)
 
     [postgres: postgres]
