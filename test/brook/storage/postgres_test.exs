@@ -184,7 +184,7 @@ defmodule Brook.Storage.PostgresTest do
   describe "delete/2" do
     setup [:start_validation_postgres, :start_storage_postgres]
 
-    test "deletes entry in postgres" do
+    test "deletes view and event entries in postgres" do
       event = Brook.Event.new(type: "create", author: "testing", data: "data1")
       :ok = Postgres.persist(@instance, event, "people", "key1", "value1")
       assert {:ok, "value1"} == Postgres.get(@instance, "people", "key1")

@@ -175,7 +175,6 @@ defmodule Brook.Storage.Postgres do
     end)
   end
 
-  defp ok({:ok, _value} = result), do: result
   defp ok(value), do: {:ok, value}
 
   defp view_table(schema, table), do: "#{schema}.#{table}"
