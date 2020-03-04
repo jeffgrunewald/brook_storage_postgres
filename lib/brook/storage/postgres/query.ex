@@ -21,6 +21,9 @@ defmodule Brook.Storage.Postgres.Query do
   @type event :: binary()
 
   require Logger
+  import Brook.Storage.Postgres.Statement
+
+  @pg_already_exists "42P07"
 
   @spec postgres_upsert(
           conn(),
@@ -30,14 +33,7 @@ defmodule Brook.Storage.Postgres.Query do
           Brook.view_value()
         ) :: :ok | {:error, Brook.reason()}
   def postgres_upsert(conn, view_table, collection, key, value) do
-    case Postgrex.query(
-           conn,
-           "INSERT INTO #{view_table} (collection, key, value)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (key)
-        DO UPDATE SET value = EXCLUDED.value;",
-           [collection, key, value]
-         ) do
+    case Postgrex.query(conn, upsert_stmt(view_table), [collection, key, value]) do
       {:ok, %Postgrex.Result{num_rows: 1}} -> :ok
       error_result -> error_result
     end
@@ -53,12 +49,13 @@ defmodule Brook.Storage.Postgres.Query do
           event()
         ) :: :ok | {:error, Brook.reason()}
   def postgres_insert_event(conn, events_table, collection, key, type, timestamp, event) do
-    case Postgrex.query(
-           conn,
-           "INSERT INTO #{events_table} (collection, key_id, type, create_ts, data)
-        VALUES ($1, $2, $3, $4, $5);",
-           [collection, key, type, timestamp, event]
-         ) do
+    case Postgrex.query(conn, insert_event_stmt(events_table), [
+           collection,
+           key,
+           type,
+           timestamp,
+           event
+         ]) do
       {:ok, %Postgrex.Result{num_rows: 1}} -> :ok
       error_result -> error_result
     end
@@ -67,13 +64,7 @@ defmodule Brook.Storage.Postgres.Query do
   @spec postgres_delete(conn(), schema_table(), Brook.view_collection(), Brook.view_key()) ::
           :ok | {:error, Brook.reason()}
   def postgres_delete(conn, view_table, collection, key) do
-    case Postgrex.query(
-           conn,
-           "DELETE FROM #{view_table}
-        WHERE collection = $1
-        AND key = $2;",
-           [collection, key]
-         ) do
+    case Postgrex.query(conn, delete_stmt(view_table), [collection, key]) do
       {:ok, %Postgrex.Result{num_rows: 1, rows: nil}} -> :ok
       error_result -> error_result
     end
@@ -82,21 +73,9 @@ defmodule Brook.Storage.Postgres.Query do
   @spec postgres_get(conn(), schema_table(), Brook.view_collection(), Brook.view_key() | nil) ::
           {:ok, [Brook.view_value()]} | {:error, Brook.reason()}
   def postgres_get(conn, view_table, collection, key \\ nil) do
-    {key_variable, key_filter} =
-      case key do
-        nil -> {nil, []}
-        _ -> {"AND key = $2", [key]}
-      end
+    {key_filter, key_variable} = if key, do: {true, [key]}, else: {false, []}
 
-    case Postgrex.query(
-           conn,
-           "SELECT value
-          FROM #{view_table}
-          WHERE collection = $1
-          #{key_variable}
-          ;",
-           [collection] ++ key_filter
-         ) do
+    case Postgrex.query(conn, get_stmt(view_table, key_filter), [collection] ++ key_variable) do
       {:ok, %Postgrex.Result{rows: rows}} -> {:ok, List.flatten(rows)}
       error_result -> error_result
     end
@@ -111,21 +90,12 @@ defmodule Brook.Storage.Postgres.Query do
         ) ::
           {:ok, [event()]} | {:error, Brook.reason()}
   def postgres_get_events(conn, events_table, collection, key, type \\ nil) do
-    {type_variable, type_filter} =
-      case type do
-        nil -> {nil, []}
-        _ -> {"AND type = $3", [type]}
-      end
+    {type_filter, type_variable} = if type, do: {true, [type]}, else: {false, []}
 
     case Postgrex.query(
            conn,
-           "SELECT data
-        FROM #{events_table}
-        WHERE collection = $1
-        AND key_id = $2
-        #{type_variable}
-        ORDER BY create_ts ASC;",
-           [collection, key] ++ type_filter
+           get_events_stmt(events_table, type_filter),
+           [collection, key] ++ type_variable
          ) do
       {:ok, %Postgrex.Result{rows: rows}} -> {:ok, List.flatten(rows)}
       error_result -> error_result
@@ -134,7 +104,7 @@ defmodule Brook.Storage.Postgres.Query do
 
   @spec schema_create(conn(), String.t()) :: :ok | {:error, Brook.reason()}
   def schema_create(conn, schema) do
-    case Postgrex.query(conn, "CREATE SCHEMA IF NOT EXISTS #{schema};", []) do
+    case Postgrex.query(conn, create_schema_stmt(schema), []) do
       {:ok, %Postgrex.Result{}} ->
         Logger.info(fn -> "Schema #{schema} successfully created" end)
         :ok
@@ -147,20 +117,12 @@ defmodule Brook.Storage.Postgres.Query do
   @spec view_table_create(conn(), schema_table()) :: :ok | {:error, Brook.reason()}
   def view_table_create(conn, view_table) do
     with {:ok, %Postgrex.Result{messages: []}} <-
-           Postgrex.query(
-             conn,
-             "CREATE TABLE IF NOT EXISTS #{view_table} (
-             key VARCHAR PRIMARY KEY,
-             collection VARCHAR,
-             value JSONB
-             );",
-             []
-           ) do
+           Postgrex.query(conn, create_view_stmt(view_table), []) do
       Logger.info(fn -> "Table #{view_table} created with indices : key" end)
 
       :ok
     else
-      {:ok, %Postgrex.Result{messages: [%{code: "42P07"}]}} ->
+      {:ok, %Postgrex.Result{messages: [%{code: @pg_already_exists}]}} ->
         Logger.info(fn ->
           "Table #{view_table} already exists; skipping index creation"
         end)
@@ -175,39 +137,22 @@ defmodule Brook.Storage.Postgres.Query do
   @spec events_table_create(pid(), schema_table(), schema_table()) ::
           :ok | {:error, Brook.reason()}
   def events_table_create(conn, view_table, events_table) do
+    type_field = "type"
+    timestamp_field = "create_ts"
+
     with {:ok, %Postgrex.Result{messages: []}} <-
-           Postgrex.query(
-             conn,
-             "CREATE TABLE IF NOT EXISTS #{events_table} (
-             id BIGSERIAL PRIMARY KEY,
-             key_id VARCHAR NOT NULL,
-             collection VARCHAR,
-             type VARCHAR,
-             create_ts BIGINT,
-             data BYTEA,
-             FOREIGN KEY (key_id) REFERENCES #{view_table}(key) ON DELETE CASCADE
-             );",
-             []
-           ),
+           Postgrex.query(conn, create_events_stmt(view_table, events_table), []),
          {:ok, %Postgrex.Result{}} <-
-           Postgrex.query(
-             conn,
-             "CREATE INDEX CONCURRENTLY type_idx ON #{events_table} (type);",
-             []
-           ),
+           Postgrex.query(conn, create_index_stmt(events_table, type_field), []),
          {:ok, %Postgrex.Result{}} <-
-           Postgrex.query(
-             conn,
-             "CREATE INDEX CONCURRENTLY timestamp_idx ON #{events_table} (create_ts);",
-             []
-           ) do
+           Postgrex.query(conn, create_index_stmt(events_table, timestamp_field), []) do
       Logger.info(fn ->
-        "Table #{events_table} created with indices : type, create_ts"
+        "Table #{events_table} created with indices : #{type_field}, #{timestamp_field}"
       end)
 
       :ok
     else
-      {:ok, %Postgrex.Result{messages: [%{code: "42P07"}]}} ->
+      {:ok, %Postgrex.Result{messages: [%{code: @pg_already_exists}]}} ->
         Logger.info(fn ->
           "Table #{events_table} already exists; skipping index creation"
         end)
