@@ -9,12 +9,54 @@ defmodule BrookPostgres.Query do
   """
   require Logger
 
+  @spec postgres_upsert(pid(), String.t(), String.t(), String.t(), String.t()) :: :ok
+  def postgres_upsert(conn, schema_table, collection, key, value) do
+    {:ok, %Postgrex.Result{num_rows: 1}} =
+      Postgrex.query(
+        conn,
+        "INSERT INTO #{schema_table} (collection, key, value)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (key)
+        DO UPDATE SET value = EXCLUDED.value;",
+        [collection, key, value]
+      )
+
+    :ok
+  end
+
+  @spec postgres_insert_event(pid(), String.t(), String.t(), String.t(), String.Chars.t(), non_neg_integer(), binary()) :: :ok
+  def postgres_insert_event(conn, schema_table, collection, key, type, timestamp, event) do
+    {:ok, %Postgrex.Result{num_rows: 1}} =
+      Postgrex.query(
+        conn,
+        "INSERT INTO #{schema_table}_events (collection, key, type, create_ts, data)
+        VALUES ($1, $2, $3, $4, $5);",
+        [collection, key, type, timestamp, event]
+      )
+
+    :ok
+  end
+
+  @spec postgres_delete(pid(), String.t(), String.t(), String.t()) :: :ok
+  def postgres_delete(conn, schema_table, collection, key) do
+    {:ok, %Postgrex.Result{num_rows: 1, rows: nil}} =
+      Postgrex.query(
+        conn,
+        "DELETE FROM #{schema_table}
+        WHERE collection = $1
+        AND key = $2;",
+        [collection, key]
+      )
+
+    :ok
+  end
+
   @spec postgres_get(pid(), String.t(), String.t(), String.t() | nil) :: {:ok, term()}
   def postgres_get(conn, schema_table, collection, key \\ nil) do
-    key_filter =
+    {key_variable, key_filter} =
       case key do
-        nil -> nil
-        _ -> "AND key = '#{key}'"
+        nil -> {nil, []}
+        _ -> {"AND key = $2", [key]}
       end
 
     {:ok, %Postgrex.Result{rows: rows}} =
@@ -22,10 +64,10 @@ defmodule BrookPostgres.Query do
         conn,
         "SELECT value
         FROM #{schema_table}
-        WHERE collection = '#{collection}'
+        WHERE collection = $1
         #{key_filter}
         ;",
-        []
+        [collection] ++ key_filter
       )
 
     {:ok, List.flatten(rows)}
@@ -34,10 +76,10 @@ defmodule BrookPostgres.Query do
   @spec postgres_get_events(pid(), String.t(), String.t(), String.t(), String.t() | nil) ::
           {:ok, [binary()]}
   def postgres_get_events(conn, schema_table, collection, key, type \\ nil) do
-    type_filter =
+    {type_variable, type_filter} =
       case type do
-        nil -> nil
-        _ -> "AND type = '#{type}'"
+        nil -> {nil, []}
+        _ -> {"AND type = $3", [type]}
       end
 
     {:ok, %Postgrex.Result{rows: rows}} =
@@ -45,11 +87,11 @@ defmodule BrookPostgres.Query do
         conn,
         "SELECT data
         FROM #{schema_table}
-        WHERE collection = '#{collection}'
-        AND key = '#{key}'
-        #{type_filter}
+        WHERE collection = $1
+        AND key = $2
+        #{type_variable}
         ORDER BY create_ts ASC;",
-        []
+        [collection, key] ++ type_filter
       )
 
     {:ok, List.flatten(rows)}
@@ -73,17 +115,10 @@ defmodule BrookPostgres.Query do
            Postgrex.query(
              conn,
              "CREATE TABLE IF NOT EXISTS #{schema}.#{table} (
-             id SERIAL PRIMARY KEY,
+             key VARCHAR PRIMARY KEY,
              collection VARCHAR,
-             key VARCHAR,
              value JSONB
              );",
-             []
-           ),
-         {:ok, %Postgrex.Result{}} <-
-           Postgrex.query(
-             conn,
-             "CREATE INDEX CONCURRENTLY key_idx ON #{schema}.#{table} (key);",
              []
            ) do
       Logger.info(fn -> "Table #{table} created in schema #{schema} with indices : key" end)
@@ -108,14 +143,12 @@ defmodule BrookPostgres.Query do
              conn,
              "CREATE TABLE IF NOT EXISTS #{schema}.#{table}_events (
              id BIGSERIAL PRIMARY KEY,
-             key_id INTEGER NOT NULL,
+             key_id VARCHAR NOT NULL,
              collection VARCHAR,
              type VARCHAR,
-             author VARCHAR,
-             create_ts TIMESTAMP,
-             forwarded BOOLEAN,
+             create_ts BIGINT,
              data BYTEA,
-             FOREIGN KEY (key_id) REFERENCES #{schema}.#{table}(id) ON DELETE CASCADE
+             FOREIGN KEY (key_id) REFERENCES #{schema}.#{table}(key) ON DELETE CASCADE
              );",
              []
            ),

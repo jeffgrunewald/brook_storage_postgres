@@ -16,21 +16,29 @@ defmodule BrookPostgres.Storage do
   @behaviour Brook.Storage
 
   @impl Brook.Storage
-  def persist(_instance, _event, _collection, _key, _value) do
-    :ok
+  def persist(instance, event, collection, key, value) do
+    %{postgrex: postgrex, schema: schema, table: table, event_limits: event_limits} = state(instance)
 
-    # must compress event prior to storing
-    # must store the event AND the value
+    Logger.debug(fn -> "#{__MODULE__}: persisting #{collection}:#{key}:#{inspect(value)} to postgres" end)
+
+    with {:ok, serialized_event} <- Brook.Serializer.serialize(event),
+         gzipped_serialized_event <- :zlib.gzip(serialized_event),
+         event_limit <- Map.get(event_limits, event.type, :no_limit),
+         {:ok, serialized_value} <- Brook.Serializer.serialize(value),
+         :ok <- Query.postgres_upsert(postgrex, "#{schema}.#{table}", collection, key, %{"key" => key "value" => serialized_value}),
+         :ok <- Query.postgres_(postgrex, "#{schema}.#{table}", collection, key, event.type, event.create_ts, gzipped_serialized_event) do
+      :ok
+    end
+  rescue
+    ArgumentError -> {:error, not_initialized_exception()}
     # must support different collections for event types AND limits on each type
-    # may create a table of known types for events (author = string, create_ts = timestamp, data = jsonb, forwarded = boolean, type = string)
-    # inserts values as jsonb (Brook serialize and then json decode to map)
   end
 
   @impl Brook.Storage
-  def delete(_instance, _collection, _key) do
-    :ok
+  def delete(instance, collection, key) do
+    %{postgrex: postgrex, schema: schema, table: table} = state(instance)
 
-    # must delete the stored key AND the events of that type for that collection
+    :ok = Query.postgres_delete(postgrex, "#{schema}.#{table}", collection, key)
   end
 
   @impl Brook.Storage
@@ -41,9 +49,8 @@ defmodule BrookPostgres.Storage do
       {:ok, []} ->
         {:ok, nil}
 
-      {:ok, [encoded_value]} ->
-        value
-        |> Jason.decode!()
+      {:ok, [serialized_value]} ->
+        serialized_value
         |> Map.get("value")
         |> Brook.Deserializer.deserialize()
 
@@ -62,6 +69,7 @@ defmodule BrookPostgres.Storage do
       |> Enum.map(&deserialize_data/1)
       |> Enum.into(%{})
       |> ok()
+    end
   end
 
   @impl Brook.Storage
