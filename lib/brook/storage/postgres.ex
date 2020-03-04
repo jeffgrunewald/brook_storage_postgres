@@ -13,40 +13,55 @@ defmodule Brook.Storage.Postgres do
 
   # count = select count (*) from table, match out 'rows' field, flatten list
   # delete records sorted by create_ts = delete from events_table where id in (select id from events_table order by id limit number_rows_to_delete)
-
+  # need to limit event types by event_limits map
   @behaviour Brook.Storage
 
   @impl Brook.Storage
   def persist(instance, event, collection, key, value) do
-    %{postgrex: postgrex, schema: schema, table: table, event_limits: event_limits} = state(instance)
+    %{postgrex: postgrex, schema: schema, table: table, event_limits: event_limits} =
+      state(instance)
 
-    Logger.debug(fn -> "#{__MODULE__}: persisting #{collection}:#{key}:#{inspect(value)} to postgres" end)
+    Logger.debug(fn ->
+      "#{__MODULE__}: persisting #{collection}:#{key}:#{inspect(value)} to postgres"
+    end)
 
     with {:ok, serialized_event} <- Brook.Serializer.serialize(event),
          gzipped_serialized_event <- :zlib.gzip(serialized_event),
          event_limit <- Map.get(event_limits, event.type, :no_limit),
          {:ok, serialized_value} <- Brook.Serializer.serialize(value),
-         :ok <- Query.postgres_upsert(postgrex, "#{schema}.#{table}", collection, key, %{"key" => key "value" => serialized_value}),
-         :ok <- Query.postgres_(postgrex, "#{schema}.#{table}", collection, key, event.type, event.create_ts, gzipped_serialized_event) do
+         :ok <-
+           Query.postgres_upsert(postgrex, view_table(schema, table), collection, key, %{
+             "key" => key,
+             "value" => serialized_value
+           }),
+         :ok <-
+           Query.postgres_insert_event(
+             postgrex,
+             events_table(schema, table),
+             collection,
+             key,
+             event.type,
+             event.create_ts,
+             gzipped_serialized_event
+           ) do
       :ok
     end
   rescue
     ArgumentError -> {:error, not_initialized_exception()}
-    # must support different collections for event types AND limits on each type
   end
 
   @impl Brook.Storage
   def delete(instance, collection, key) do
     %{postgrex: postgrex, schema: schema, table: table} = state(instance)
 
-    :ok = Query.postgres_delete(postgrex, "#{schema}.#{table}", collection, key)
+    Query.postgres_delete(postgrex, view_table(schema, table), collection, key)
   end
 
   @impl Brook.Storage
   def get(instance, collection, key) do
     %{postgrex: postgrex, schema: schema, table: table} = state(instance)
 
-    case Query.postgres_get(postgrex, "#{schema}.#{table}", collection, key) do
+    case Query.postgres_get(postgrex, view_table(schema, table), collection, key) do
       {:ok, []} ->
         {:ok, nil}
 
@@ -64,9 +79,9 @@ defmodule Brook.Storage.Postgres do
   def get_all(instance, collection) do
     %{postgrex: postgrex, schema: schema, table: table} = state(instance)
 
-    with {:ok, encoded_values} <- Query.postgres_get(postgrex, "#{schema}.#{table}", collection),
-         {:ok, decoded_values} <- safe_map(encoded_values, &Jason.decode/1) do
-      decoded_values
+    with {:ok, serialized_values} <-
+           Query.postgres_get(postgrex, view_table(schema, table), collection) do
+      serialized_values
       |> Enum.map(&deserialize_data/1)
       |> Enum.into(%{})
       |> ok()
@@ -78,10 +93,10 @@ defmodule Brook.Storage.Postgres do
     %{postgrex: postgrex, schema: schema, table: table} = state(instance)
 
     with {:ok, compressed_events} <-
-           Query.postgres_get_events(postgrex, "#{schema}.#{table}_events", collection, key),
+           Query.postgres_get_events(postgrex, events_table(schema, table), collection, key),
          serialized_events <- Enum.map(compressed_events, &:zlib.gunzip/1),
          {:ok, events} <- safe_map(serialized_events, &Brook.Deserializer.deserialize/1) do
-      {:ok, events}
+      events |> sort_events() |> ok()
     end
   end
 
@@ -90,10 +105,10 @@ defmodule Brook.Storage.Postgres do
     %{postgrex: postgrex, schema: schema, table: table} = state(instance)
 
     with {:ok, compressed_events} <-
-           Query.postgres_get_events(postgrex, "#{schema}.#{table}_events", collection, key, type),
+           Query.postgres_get_events(postgrex, events_table(schema, table), collection, key, type),
          serialized_events <- Enum.map(compressed_events, &:zlib.gunzip/1),
          {:ok, events} <- safe_map(serialized_events, &Brook.Deserializer.deserialize/1) do
-      {:ok, events}
+      events |> sort_events() |> ok()
     end
   end
 
@@ -129,10 +144,13 @@ defmodule Brook.Storage.Postgres do
   end
 
   @impl GenServer
-  def handle_continue(:init_tables, state) do
-    with :ok <- Query.schema_create(state.postgrex, state.schema),
-         :ok <- Query.view_table_create(state.postgrex, state.schema, state.table),
-         :ok <- Query.events_table_create(state.postgrex, state.schema, state.table) do
+  def handle_continue(:init_tables, %{schema: schema, table: table} = state) do
+    view_table = view_table(schema, table)
+    events_table = events_table(schema, table)
+
+    with :ok <- Query.schema_create(state.postgrex, schema),
+         :ok <- Query.view_table_create(state.postgrex, view_table),
+         :ok <- Query.events_table_create(state.postgrex, view_table, events_table) do
       :ok
     else
       {:error, error} -> Logger.warn(fn -> "Unable to initialize tables : #{inspect(error)}" end)
@@ -157,12 +175,19 @@ defmodule Brook.Storage.Postgres do
     end)
   end
 
-  defp ok({:ok, value} = result), do: result
+  defp ok({:ok, _value} = result), do: result
   defp ok(value), do: {:ok, value}
+
+  defp view_table(schema, table), do: "#{schema}.#{table}"
+  defp events_table(schema, table), do: "#{schema}.#{table}_events"
 
   defp deserialize_data(%{"key" => key, "value" => value}) do
     {:ok, deserialized_value} = Brook.Deserializer.deserialize(value)
     {key, deserialized_value}
+  end
+
+  defp sort_events(events) do
+    Enum.sort_by(events, fn event -> event.create_ts end)
   end
 
   defp not_initialized_exception() do

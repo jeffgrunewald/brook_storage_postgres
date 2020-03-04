@@ -21,9 +21,10 @@ defmodule Brook.Storage.PostgresTest do
       event = Brook.Event.new(type: "create", author: "testing", data: "data")
       Postgres.persist(@instance, event, "people", "key1", %{"one" => 1})
 
-      saved_value =
-        Postgrex.query!(postgres, "select data from state", [])
+      {:ok, saved_value} =
+        Postgrex.query!(postgres, "SELECT value FROM #{@table};", [])
         |> (fn %{rows: [[rows]]} -> rows end).()
+        |> Map.get("value")
         |> Brook.Deserializer.deserialize()
 
       assert %{"one" => 1} == saved_value
@@ -38,34 +39,35 @@ defmodule Brook.Storage.PostgresTest do
 
       saved_value =
         postgres
-        |> Postgrex.query!("select data from state", [])
+        |> Postgrex.query!("SELECT value FROM #{@table}", [])
         |> (fn %{rows: [[rows]]} -> rows end).()
+        |> Map.get("value")
         |> Brook.Deserializer.deserialize()
         |> (fn {:ok, decoded_value} -> decoded_value end).()
 
       assert %{"one" => 1, "two" => 2} == saved_value
 
-      create_event_list =
+      [{:ok, create_event}] =
         postgres
-        |> Postgrex.query!("select data from events where type=create", [])
-        |> (fn %{rows: [[rows]]} -> rows end).()
-        |> Brook.Deserializer.deserialize()
-        |> (fn {:ok, decoded_event} -> decoded_event end).()
+        |> Postgrex.query!("SELECT data FROM #{@table}_events WHERE type = $1", ["create"])
+        |> (fn %{rows: [rows]} -> rows end).()
+        |> Enum.map(&:zlib.gunzip/1)
+        |> Enum.map(&Brook.Deserializer.deserialize/1)
 
-      assert [event1] == create_event_list
+      assert event1 == create_event
 
-      update_event_list =
+      [{:ok, update_event}] =
         postgres
-        |> Postgrex.query!("select data from events where type=update", [])
-        |> (fn %{rows: [[rows]]} -> rows end).()
-        |> Brook.Deserializer.deserialize()
-        |> (fn {:ok, decoded_event} -> decoded_event end).()
+        |> Postgrex.query!("SELECT data FROM #{@table}_events WHERE type = $1", ["update"])
+        |> (fn %{rows: [rows]} -> rows end).()
+        |> Enum.map(&:zlib.gunzip/1)
+        |> Enum.map(&Brook.Deserializer.deserialize/1)
 
-      assert [event2] == update_event_list
+      assert event2 == update_event
     end
 
     test "will return an error tuple when postgres returns an error" do
-      allow(Postgrex.query(any(), any(), any(), any()), return: {:error, :failure_struct})
+      allow(Postgrex.query(any(), any(), any()), return: {:error, :failure_struct})
 
       event = Brook.Event.new(type: "create", author: "testing", data: "data")
 
@@ -101,7 +103,7 @@ defmodule Brook.Storage.PostgresTest do
     end
 
     test "returns an error tuple when postgrex returns an error" do
-      allow(Postgrex.query(any(), any(), any(), any()), return: {:error, :failure_struct})
+      allow(Postgrex.query(any(), any(), any()), return: {:error, :failure_struct})
 
       assert {:error, :failure_struct} == Postgres.get(@instance, "people", "key1")
     end
@@ -169,14 +171,12 @@ defmodule Brook.Storage.PostgresTest do
     end
 
     test "returns error tuple when postgrex returns an error" do
-      allow(Postgrex.query(any(), any(), any(), any()), return: {:error, :failure_struct})
+      allow(Postgrex.query(any(), any(), any()), return: {:error, :failure_struct})
 
       assert {:error, :failure_struct} == Postgres.get_all(@instance, "people")
     end
 
     test "returns empty map when no data available" do
-      allow(Postgrex.query(any(), any(), any(), any()), return: {:ok, []})
-
       assert {:ok, %{}} == Postgres.get_all(@instance, "jerks")
     end
   end
@@ -195,21 +195,26 @@ defmodule Brook.Storage.PostgresTest do
     end
 
     test "returns error tuple when postgrex returns error tuple" do
-      allow(Postgrex.query(any(), any(), any(), any()), return: {:error, :failure_struct})
+      allow(Postgrex.query(any(), any(), any()), return: {:error, :failure_struct})
 
-      assert {:error, :failure_struct} == Postgres.delete(@instance, "people", "key2")
+      result = Postgres.delete(@instance, "people", "key2")
+      assert {:error, :failure_struct} == result
     end
   end
 
-  defp start_storage_postgres(_context) do
+  defp start_storage_postgres(%{postgres: postgres}) do
     registry_name = Brook.Config.registry(@instance)
     start_supervised({Registry, name: registry_name, keys: :unique})
 
     start_supervised(
       {Postgres,
-       instance: @instance, table: @table, postgrex_args: @postgrex_args, event_limits: %{"restricted" => 5}}
+       instance: @instance,
+       table: @table,
+       postgrex_args: @postgrex_args,
+       event_limits: %{"restricted" => 5}}
     )
 
+    db_ready?(postgres)
     :ok
   end
 
@@ -222,5 +227,16 @@ defmodule Brook.Storage.PostgresTest do
     end)
 
     [postgres: postgres]
+  end
+
+  defp db_ready?(conn) do
+    case Postgrex.query(conn, "SELECT * FROM #{@table}_events;", []) do
+      {:ok, _} ->
+        :ok
+
+      {:error, _} ->
+        Process.sleep(10)
+        db_ready?(conn)
+    end
   end
 end
