@@ -1,14 +1,15 @@
-defmodule BrookPostgres.Storage do
+defmodule Brook.Storage.Postgres do
   @moduledoc """
   Implements the `Brook.Storage` behaviour for the Postgres
-  database, saving the application view state as serialized
-  (binary) encodings of the direct Elixir terms to be saved
-  with compression.
+  database, saving the application view state key/value pairs
+  as JSONB records and the event structs that generate those
+  key/value pairs as compressed binary encodings of in a BYTEA
+  database type with optional truncation of events by type.
   """
   use GenServer
   require Logger
   import Brook.Config, only: [registry: 1, put: 3, get: 2]
-  alias BrookPostgres.Query
+  alias Brook.Storage.Postgres.Query
 
   # count = select count (*) from table, match out 'rows' field, flatten list
   # delete records sorted by create_ts = delete from events_table where id in (select id from events_table order by id limit number_rows_to_delete)

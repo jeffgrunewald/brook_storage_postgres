@@ -1,4 +1,4 @@
-defmodule BrookPostgres.Query do
+defmodule Brook.Storage.Postgres.Query do
   @moduledoc """
   Abstracts the Postgrex SQL query functions away from
   the storage behaviour implementation.
