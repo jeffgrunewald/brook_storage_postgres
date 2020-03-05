@@ -11,9 +11,6 @@ defmodule Brook.Storage.Postgres do
   import Brook.Config, only: [registry: 1, put: 3, get: 2]
   alias Brook.Storage.Postgres.{Limit, Query}
 
-  # count = select count (*) from table, match out 'rows' field, flatten list
-  # delete records sorted by create_ts = delete from events_table where id in (select id from events_table order by id limit number_rows_to_delete)
-  # need to limit event types by event_limits map
   @behaviour Brook.Storage
 
   @impl Brook.Storage
