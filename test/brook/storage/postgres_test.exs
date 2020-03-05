@@ -83,6 +83,8 @@ defmodule Brook.Storage.PostgresTest do
         Postgres.persist(@instance, restricted_event, "people", "key4", %{"name" => "joe"})
       end)
 
+      Process.sleep(100)
+
       {:ok, events} = Postgres.get_events(@instance, "people", "key4")
       grouped_events = Enum.group_by(events, fn event -> event.type end)
 
