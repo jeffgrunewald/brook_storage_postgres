@@ -9,7 +9,7 @@ defmodule Brook.Storage.Postgres do
   use GenServer
   require Logger
   import Brook.Config, only: [registry: 1, put: 3, get: 2]
-  alias Brook.Storage.Postgres.Query
+  alias Brook.Storage.Postgres.{Limit, Query}
 
   # count = select count (*) from table, match out 'rows' field, flatten list
   # delete records sorted by create_ts = delete from events_table where id in (select id from events_table order by id limit number_rows_to_delete)
@@ -44,6 +44,9 @@ defmodule Brook.Storage.Postgres do
              event.create_ts,
              gzipped_serialized_event
            ) do
+      if is_integer(event_limit),
+        do: Limit.prune(postgrex, events_table(schema, table), event.type, event_limit)
+
       :ok
     end
   rescue

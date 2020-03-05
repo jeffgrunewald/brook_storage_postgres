@@ -83,8 +83,24 @@ defmodule Brook.Storage.Postgres.Statement do
   end
 
   def create_index_stmt(table, column) do
+    ~s|CREATE INDEX CONCURRENTLY #{column}_idx ON #{table} (#{column});|
+  end
+
+  def prune_count_stmt(table) do
+    ~s|SELECT count (id) FROM #{table} WHERE type = $1;|
+  end
+
+  def prune_delete_stmt(table) do
     ~s|
-    CREATE INDEX CONCURRENTLY #{column}_idx ON #{table} (#{column});
+    DELETE FROM #{table}
+    WHERE id IN
+    (
+      SELECT id
+      FROM #{table}
+      WHERE type = $1
+      ORDER BY create_ts
+      LIMIT $2
+    );
     |
   end
 end
