@@ -1,15 +1,20 @@
 defmodule BrookStoragePostgres.MixProject do
   use Mix.Project
 
+  @github "https://github.com/jeffgrunewald/brook_storage_postgres"
+
   def project do
     [
       app: :brook_storage_postgres,
       version: "0.1.0",
       elixir: "~> 1.8",
+      start_permanent: Mix.env() == :prod,
+      deps: deps(),
       description: description(),
       package: package(),
-      start_permanent: Mix.env() == :prod,
-      deps: deps()
+      source_url: @github,
+      homepage_url: @github,
+      dialyzer: [plt_file: {:no_warn, ".dialyzer/#{System.version()}.plt"}]
     ]
   end
 
@@ -35,6 +40,14 @@ defmodule BrookStoragePostgres.MixProject do
       maintainers: ["Jeff Grunewald"],
       licenses: ["Apache 2.0"],
       links: %{"GitHub" => "https://github.com/jeffgrunewald/brook_storage_postgres"}
+    ]
+  end
+
+  defp docs do
+    [
+      source_url: @github,
+      licenses: ["Apache 2.0"],
+      links: %{"GitHub" => @github}
     ]
   end
 
