@@ -50,7 +50,7 @@ jobs:
       - name: Retrieve cached PLT
         uses: actions/cache@v1
         with:
-          path: .plt
+          path: .dialyzer
           key: plt-${{ github.head_ref }}
           restore-keys: |
             plt-${{ github.base_ref }}
