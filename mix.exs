@@ -30,6 +30,7 @@ defmodule BrookStoragePostgres.MixProject do
       {:brook, "~> 0.5"},
       {:brook_serializer, "~> 2.2"},
       {:postgrex, "~> 0.15"},
+      {:ex_doc, "0.21.0"},
       {:dialyxir, "~> 1.0.0-rc.7", only: [:dev], runtime: false},
       {:divo_postgres, "~> 0.1", only: [:test]},
       {:placebo, "~> 1.2", only: [:test]}
