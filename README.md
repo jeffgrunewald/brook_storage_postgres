@@ -28,7 +28,7 @@ to your mix.exs file.
 ```elixir
 def deps do
   [
-    {:brook_storage_postgres, "~> 0.1.0"}
+    {:brook_storage_postgres, "~> 0.1.1"}
   ]
 end
 ```

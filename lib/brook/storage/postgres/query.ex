@@ -65,7 +65,7 @@ defmodule Brook.Storage.Postgres.Query do
           :ok | {:error, Brook.reason()}
   def postgres_delete(conn, view_table, collection, key) do
     case Postgrex.query(conn, delete_stmt(view_table), [collection, key]) do
-      {:ok, %Postgrex.Result{num_rows: 1, rows: nil}} -> :ok
+      {:ok, %Postgrex.Result{num_rows: rows, rows: nil}} when rows in [0, 1] -> :ok
       error_result -> error_result
     end
   end

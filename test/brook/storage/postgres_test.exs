@@ -192,6 +192,7 @@ defmodule Brook.Storage.PostgresTest do
       assert {:ok, "value1"} == Postgres.get(@instance, "people", "key1")
 
       :ok = Postgres.delete(@instance, "people", "key1")
+      assert :ok = Postgres.delete(@instance, "people", "key1")
       assert {:ok, nil} == Postgres.get(@instance, "people", "key1")
       assert {:ok, []} == Postgres.get_events(@instance, "people", "key1")
     end
