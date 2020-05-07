@@ -8,7 +8,7 @@ defmodule Brook.Storage.Postgres.Statement do
     ~s|
     INSERT INTO #{table} (collection, key, value)
     VALUES ($1, $2, $3)
-    ON CONFLICT (key)
+    ON CONFLICT (collection, key)
     DO UPDATE SET value = EXCLUDED.value;
     |
   end
@@ -60,9 +60,10 @@ defmodule Brook.Storage.Postgres.Statement do
     ~s|
     CREATE TABLE IF NOT EXISTS #{table}
     (
-      key VARCHAR PRIMARY KEY,
       collection VARCHAR,
-      value JSONB
+      key VARCHAR,
+      value JSONB,
+      PRIMARY KEY (collection, key)
     );
     |
   end
@@ -77,7 +78,7 @@ defmodule Brook.Storage.Postgres.Statement do
       type VARCHAR,
       create_ts BIGINT,
       data BYTEA,
-      FOREIGN KEY (key_id) REFERENCES #{view_table}(key) ON DELETE CASCADE
+      FOREIGN KEY (collection, key_id) REFERENCES #{view_table}(collection, key) ON DELETE CASCADE
     );
     |
   end
