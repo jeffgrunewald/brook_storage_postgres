@@ -30,6 +30,24 @@ defmodule Brook.Storage.PostgresTest do
       assert %{"one" => 1} == saved_value
     end
 
+    test "allows unique combinations of collection and key", %{postgres: postgres} do
+      event1 = Brook.Event.new(type: "create", author: "testing", data: %{"a" => 1})
+      event2 = Brook.Event.new(type: "create", author: "testing", data: %{"b" => 2})
+
+      :ok = Postgres.persist(@instance, event1, "collection-1", "key", event1.data)
+      :ok = Postgres.persist(@instance, event2, "collection-2", "key", event2.data)
+
+      saved_values =
+        postgres
+        |> Postgrex.query!("SELECT value FROM #{@table}", [])
+        |> (fn result -> List.flatten(result.rows) end).()
+        |> Enum.map(&Map.get(&1, "value"))
+        |> Enum.map(&Brook.Deserializer.deserialize/1)
+        |> Enum.map(&elem(&1, 1))
+
+      assert [%{"a" => 1}, %{"b" => 2}] == saved_values
+    end
+
     test "will append the event to the events table", %{postgres: postgres} do
       event1 = Brook.Event.new(author: "bob", type: "create", data: %{"one" => 1})
       event2 = Brook.Event.new(author: "bob", type: "update", data: %{"one" => 1, "two" => 2})
