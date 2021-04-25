@@ -6,7 +6,7 @@ defmodule BrookStoragePostgres.MixProject do
   def project do
     [
       app: :brook_storage_postgres,
-      version: "0.1.2",
+      version: "0.1.3",
       elixir: "~> 1.8",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -27,13 +27,13 @@ defmodule BrookStoragePostgres.MixProject do
 
   defp deps do
     [
-      {:brook, "~> 0.5"},
+      {:brook, "~> 0.6"},
       {:brook_serializer, "~> 2.2"},
       {:postgrex, "~> 0.15"},
-      {:ex_doc, "0.21.0"},
-      {:dialyxir, "~> 1.0.0-rc.7", only: [:dev], runtime: false},
-      {:divo_postgres, "~> 0.1", only: [:test]},
-      {:placebo, "~> 1.2", only: [:test]}
+      {:ex_doc, "~> 0.24"},
+      {:dialyxir, "~> 1.1", only: [:dev], runtime: false},
+      {:divo_postgres, "~> 0.2", only: [:test]},
+      {:placebo, "~> 2.0", only: [:test]}
     ]
   end
 
